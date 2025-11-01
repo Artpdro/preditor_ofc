@@ -3,6 +3,7 @@ import pickle
 import json
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
 
@@ -10,6 +11,21 @@ from typing import Optional
 app = FastAPI(
     title="API de Predição de Acidentes",
     description="API REST para prever a quantidade de acidentes com base em dados de entrada."
+)
+
+# Middleware CORS
+origins = [
+    "http://localhost",
+    "http://localhost:3000",
+    # Adicione outros domínios se necessário
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,       # permite requisições dessas origens
+    allow_credentials=True,
+    allow_methods=["*"],         # permite GET, POST, PUT, DELETE, etc
+    allow_headers=["*"],         # permite headers personalizados
 )
 
 # Caminhos dos arquivos
@@ -41,9 +57,8 @@ def encode_input(feature: str, value: str) -> int:
         try:
             return label_encoder_mappings[feature].index(value)
         except ValueError:
-            # Se o valor não for encontrado, retorna 0 (ou outro valor padrão seguro)
             return 0 
-    return 0 # Retorna 0 se a feature não estiver nos mappings
+    return 0
 
 # Definição do esquema de dados de entrada
 class PredictionInput(BaseModel):
@@ -57,7 +72,6 @@ class PredictionInput(BaseModel):
 # Endpoint de saúde
 @app.get("/health", tags=["Monitoramento"])
 async def health_check():
-    """Verifica a saúde da API e o carregamento do modelo."""
     if model is None:
         return {"status": "error", "message": "Modelo não carregado"}
     return {"status": "ok", "message": "API e modelo carregados com sucesso"}
@@ -65,14 +79,11 @@ async def health_check():
 # Endpoint de predição
 @app.post("/predict", tags=["Predição"])
 async def predict_accidents(data: PredictionInput):
-    """
-    Realiza a predição da quantidade de acidentes com base nos dados fornecidos.
-    """
     if model is None:
         raise HTTPException(status_code=503, detail="Modelo de predição não está disponível.")
 
     try:
-        # 1. Processar a data
+        # Processar a data
         try:
             data_input = datetime.strptime(data.data_acidente, "%Y-%m-%d")
         except ValueError:
@@ -84,14 +95,14 @@ async def predict_accidents(data: PredictionInput):
         dia_do_ano = data_input.timetuple().tm_yday
         dia_do_mes = data_input.day
 
-        # 2. Codificar inputs categóricos
+        # Codificar inputs categóricos
         uf_encoded = encode_input("uf", data.uf)
         municipio_encoded = encode_input("municipio", data.municipio)
         tipo_acidente_encoded = encode_input("tipo_acidente", data.tipo_acidente)
         condicao_metereologica_encoded = encode_input("condicao_metereologica", data.condicao_metereologica)
 
-        # 3. Criar DataFrame para o modelo
-        input_df = pd.DataFrame([[
+        # Criar DataFrame para o modelo
+        input_df = pd.DataFrame([[ 
             uf_encoded, municipio_encoded, tipo_acidente_encoded, 
             condicao_metereologica_encoded, data.hora_media, dia_semana_num, 
             mes, ano, dia_do_ano, dia_do_mes
@@ -101,10 +112,9 @@ async def predict_accidents(data: PredictionInput):
             "hora_media", "dia_semana_num", "mes", "ano", "dia_do_ano", "dia_do_mes"
         ])
 
-        # 4. Fazer a predição
+        # Fazer a predição
         prediction = model.predict(input_df)[0]
-        
-        # 5. Retornar o resultado
+
         return {
             "status": "success",
             "prediction": round(prediction),
@@ -113,19 +123,16 @@ async def predict_accidents(data: PredictionInput):
         }
 
     except HTTPException:
-        # Re-lançar HTTPExceptions (como o erro de formato de data)
         raise
     except Exception as e:
-        # Capturar outros erros e retornar 500
         raise HTTPException(status_code=500, detail=f"Erro interno ao processar a predição: {e}")
 
 # Endpoint para listar os valores possíveis para as features categóricas
 @app.get("/mappings", tags=["Informação"])
 async def get_mappings():
-    """Retorna os valores categóricos esperados para cada feature."""
     return label_encoder_mappings
 
- #Exemplo de uso (opcional, para rodar localmente)
+# Para rodar localmente
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
