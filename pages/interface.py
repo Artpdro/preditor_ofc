@@ -1,15 +1,31 @@
+# preditor_ofc/pages/interface.py
 import streamlit as st
 import pandas as pd
 import pickle
 import json
 from datetime import datetime
 import plotly.express as px
+from core.auth import check_session_expiry, logout_user
 
-with open("preditor.pkl", "rb") as f:
-    model = pickle.load(f)
+# --- Autenticação e Configuração Inicial ---
+if not st.session_state.get('auth', False) or check_session_expiry():
+    st.switch_page("login.py")
 
-with open("label_encoder_mappings.json", "r") as f:
-    label_encoder_mappings = json.load(f)
+st.sidebar.title("Navegação")
+if st.sidebar.button("Sair"):
+    logout_user()
+    st.switch_page("login.py")
+
+# --- Carregamento de Modelo e Mapeamentos ---
+try:
+    with open("preditor.pkl", "rb") as f:
+        model = pickle.load(f)
+    
+    with open("label_encoder_mappings.json", "r") as f:
+        label_encoder_mappings = json.load(f)
+except FileNotFoundError:
+    st.error("Arquivos de modelo ou mapeamento não encontrados. Certifique-se de que 'preditor.pkl' e 'label_encoder_mappings.json' estão na pasta raiz.")
+    st.stop()
 
 # Função para codificar as entradas do usuário
 def encode_input(feature, value):
@@ -27,6 +43,7 @@ st.title('Previsão de quantidade de acidentes')
 st.write("Insira os dados para prever a quantidade de acidentes.")
 st.markdown("---")
 
+# --- Interface Antiga de Predição de Acidentes ---
 uf = st.selectbox("UF", label_encoder_mappings["uf"])
 municipio = st.selectbox("Município", label_encoder_mappings["municipio"])
 tipo_acidente = st.selectbox("Tipo de Acidente", label_encoder_mappings["tipo_acidente"])
@@ -64,5 +81,10 @@ if st.button("Fazer Previsão"):
     except Exception as e:
         st.error(f"Ocorreu um erro ao fazer a previsão: {e}")
         
-
 st.markdown("---")
+
+# --- Novo Link para a Interface de Rota Segura ---
+st.subheader("Funcionalidade Adicional")
+st.info("Para calcular a rota mais segura baseada em ML, acesse:")
+if st.button("Acessar Calculadora de Rota Segura"):
+    st.switch_page("pages/safe_route_interface.py")
