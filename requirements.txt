@@ -8,3 +8,8 @@ pandas
 scikit-learn
 lightgbm
 numpy
+streamlit-folium
+joblib
+geopy
+osmnx
+networkx
