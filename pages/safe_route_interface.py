@@ -1,6 +1,5 @@
 # preditor_ofc/pages/safe_route_interface.py
 import streamlit as st
-import pandas as pd
 import folium
 from streamlit_folium import folium_static
 from pathlib import Path
@@ -15,21 +14,21 @@ sys.path.append(str(PROJECT_ROOT))
 try:
     from core.routing import geocode_location, calculate_safe_route
 except ImportError:
-    st.error("Erro ao importar as funções de roteamento. Verifique se 'core/routing.py' existe e se as dependências (osmnx, networkx, geopy) estão instaladas.")
+    st.error("Erro ao importar as funções de roteamento. Verifique se 'core/routing.py' existe e se as dependências estão instaladas.")
     st.stop()
 
 # --- Carregar Mapeamento de Cidades ---
-try:
-    with open(PROJECT_ROOT / "uf_municipio_map.json", 'r', encoding='utf-8') as f:
-        UF_MUNICIPIO_MAP = json.load(f)
-except FileNotFoundError:
-    st.error("Erro: Arquivo 'uf_municipio_map.json' não encontrado no diretório raiz.")
-    UF_MUNICIPIO_MAP = {}
-except Exception as e:
-    st.error(f"Erro ao carregar 'uf_municipio_map.json': {e}")
-    UF_MUNICIPIO_MAP = {}
+@st.cache_data
+def load_city_map():
+    """Carrega o mapeamento de UF para Municípios."""
+    try:
+        with open(PROJECT_ROOT / "uf_municipio_map.json", 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        st.error(f"Erro ao carregar 'uf_municipio_map.json': {e}")
+        return {}
 
-# Lista de UFs e Municípios
+UF_MUNICIPIO_MAP = load_city_map()
 UFS = sorted(UF_MUNICIPIO_MAP.keys())
 
 # --- Interface Streamlit ---
@@ -44,39 +43,31 @@ st.write("Calcule a rota otimizada (menor risco de acidentes) usando seu dataset
 st.markdown("---")
 
 # --- Inputs: Seleção de Cidade/Município ---
+def location_selector(col, prefix):
+    """Componente de seleção de UF e Município."""
+    with col:
+        st.subheader(f"Ponto de {prefix.title()}")
+        
+        uf = st.selectbox(f"UF de {prefix.title()}", UFS, key=f'{prefix}_uf')
+        location = ""
+        
+        if uf and uf in UF_MUNICIPIO_MAP:
+            municipios = sorted([m.title() for m in UF_MUNICIPIO_MAP[uf]])
+            municipio = st.selectbox(f"Município de {prefix.title()}", municipios, key=f'{prefix}_municipio')
+            
+            if municipio:
+                location = f"{municipio}, {uf}"
+                st.caption(f"Local de {prefix.title()}: {location}")
+            else:
+                st.warning(f"Selecione um Município para {prefix.title()}.")
+        else:
+            st.warning(f"Selecione uma UF para carregar os municípios de {prefix.title()}.")
+            
+        return location
+
 col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("Ponto de Partida")
-    
-    start_uf = st.selectbox("UF de Partida", UFS, key='start_uf')
-    
-    if start_uf and start_uf in UF_MUNICIPIO_MAP:
-        municipios_start = sorted([m.title() for m in UF_MUNICIPIO_MAP[start_uf]])
-        start_municipio = st.selectbox("Município de Partida", municipios_start, key='start_municipio')
-        
-        # O local de partida para geocodificação será o Município, UF
-        start_location = f"{start_municipio}, {start_uf}" if start_municipio else ""
-        st.caption(f"Local de Partida: {start_location}")
-    else:
-        start_location = ""
-        st.warning("Selecione uma UF para carregar os municípios.")
-
-with col2:
-    st.subheader("Destino")
-    
-    end_uf = st.selectbox("UF de Destino", UFS, key='end_uf')
-    
-    if end_uf and end_uf in UF_MUNICIPIO_MAP:
-        municipios_end = sorted([m.title() for m in UF_MUNICIPIO_MAP[end_uf]])
-        end_municipio = st.selectbox("Município de Destino", municipios_end, key='end_municipio')
-        
-        # O local de destino para geocodificação será o Município, UF
-        end_location = f"{end_municipio}, {end_uf}" if end_municipio else ""
-        st.caption(f"Local de Destino: {end_location}")
-    else:
-        end_location = ""
-        st.warning("Selecione uma UF para carregar os municípios.")
+start_location = location_selector(col1, "partida")
+end_location = location_selector(col2, "destino")
 
 # --- Botão de Cálculo ---
 if st.button("Calcular Rota Segura"):
@@ -90,12 +81,11 @@ if st.button("Calcular Rota Segura"):
             end_lat, end_lon = geocode_location(end_location)
 
         if not start_lat or not end_lat:
-            st.error(f"Não foi possível encontrar as coordenadas para um ou ambos os locais: {start_location}, {end_location}. Tente outro município.")
+            st.error(f"Não foi possível encontrar as coordenadas para um ou ambos os locais. Tente outro município.")
         else:
             st.success(f"Locais geocodificados: Início ({start_lat:.4f}, {start_lon:.4f}), Fim ({end_lat:.4f}, {end_lon:.4f}).")
             
             with st.spinner("2/3: Calculando rota otimizada (ML + Geoespacial)..."):
-                # Chama a função de cálculo de rota real
                 route_coords, total_risk = calculate_safe_route(start_lat, start_lon, end_lat, end_lon)
             
             if route_coords:
@@ -112,16 +102,13 @@ if st.button("Calcular Rota Segura"):
                 st.error("Não foi possível encontrar uma rota entre os pontos. Tente locais mais próximos ou verifique a conexão com o OSMnx.")
 
 # --- Visualização do Resultado ---
-
 if 'route_coords' in st.session_state and st.session_state['route_coords']:
     st.markdown("---")
     st.subheader("Resultado da Rota Otimizada")
     
     total_risk = st.session_state['total_risk']
     
-    # Normaliza o risco total para uma escala de 0 a 100 para melhor visualização
-    # O risco total é a soma dos riscos * comprimento. O valor máximo é desconhecido.
-    # Vamos usar uma heurística simples para a cor, baseada no valor bruto.
+    # Heurística simples para a cor do risco
     risk_color = "red" if total_risk > 0.05 else "orange" if total_risk > 0.01 else "green" 
     
     st.markdown(f"**Score de Risco Total da Rota (Ponderado):** <span style='color:{risk_color}; font-size: 1.2em;'>{total_risk:.4f}</span>", unsafe_allow_html=True)

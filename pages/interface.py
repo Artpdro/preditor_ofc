@@ -7,6 +7,7 @@ from datetime import datetime
 import plotly.express as px
 from core.auth import check_session_expiry, logout_user
 import ollama
+from pathlib import Path # Adicionado para manipulação de caminhos
 
 # --- Autenticação e Configuração Inicial ---
 if not st.session_state.get('auth', False) or check_session_expiry():
@@ -17,15 +18,22 @@ if st.sidebar.button("Sair"):
     logout_user()
     st.switch_page("login.py")
 
-# --- Carregamento de Modelo e Mapeamentos ---
 try:
     with open("preditor.pkl", "rb") as f:
         model = pickle.load(f)
     
     with open("label_encoder_mappings.json", "r") as f:
         label_encoder_mappings = json.load(f)
+        
+    with open("datatran_consolidado.json", 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    df = pd.DataFrame(data)
+    
 except FileNotFoundError:
-    st.error("Arquivos de modelo ou mapeamento não encontrados. Certifique-se de que 'preditor.pkl' e 'label_encoder_mappings.json' estão na pasta raiz.")
+    st.error("Arquivos de modelo, mapeamento ou dados não encontrados. Certifique-se de que 'preditor.pkl', 'label_encoder_mappings.json' e 'datatran_consolidado.json' estão na pasta raiz.")
+    st.stop()
+except Exception as e:
+    st.error(f"Erro ao carregar recursos: {e}")
     st.stop()
 
 # Função para codificar as entradas do usuário
@@ -99,6 +107,7 @@ user_question = st.text_area(
 )
 if st.button("🤖 Perguntar à LLM"):
     try:
+        # CORREÇÃO: df agora está definido e pode ser usado
         data_context = f"Dados de acidentes: Total={len(df)}"
         prompt = f"{data_context}\nPergunta: {user_question}"
         response = ollama.chat(
