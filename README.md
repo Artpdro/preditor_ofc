@@ -56,7 +56,8 @@ As funções `predict_risk` e `calculate_safe_route` em `pages/safe_route_interf
 
 Faça perguntas ao chatbot como:
 
-1. "Quais estados com mais acidentes?"
-2. "Quais os tipos de acidente mais comuns?"
-3. "Qual hora do ocorre mais acidentes?"
-4. "Qual dia da semana ocorre mais acidentes?"
+1. `"Quais estados com mais acidentes?"`
+2. `Quais os tipos de acidente mais comuns?"`
+3. `"Qual hora do ocorre mais acidentes?"`
+4. `"Qual dia da semana ocorre mais acidentes?"`
+
