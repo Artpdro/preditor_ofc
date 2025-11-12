@@ -107,14 +107,77 @@ user_question = st.text_area(
 )
 if st.button("🤖 Perguntar à LLM"):
     try:
-        # CORREÇÃO: df agora está definido e pode ser usado
-        data_context = f"Dados de acidentes: Total={len(df)}"
-        prompt = f"{data_context}\nPergunta: {user_question}"
+        pergunta_lower = user_question.lower()
+        resumo_texto = ""
+        titulo = ""
+
+        # 🔍 Detecta o tema da pergunta
+        if "estado" in pergunta_lower or "uf" in pergunta_lower:
+            if "uf" in df.columns:
+                dados = df["uf"].value_counts().head(10)
+                titulo = "Estados com mais acidentes"
+                resumo_texto = "\n".join([f"- {a}: {b}" for a, b in dados.items()])
+
+        elif "hora" in pergunta_lower or "horário" in pergunta_lower or "turno" in pergunta_lower:
+            if "horario" in df.columns:
+                df["hora"] = pd.to_datetime(df["horario"], errors="coerce").dt.hour
+                dados = df["hora"].value_counts().sort_index()
+                titulo = "Distribuição de acidentes por hora do dia"
+                resumo_texto = "\n".join([f"- {int(a)}h: {b}" for a, b in dados.items()])
+
+        elif "dia" in pergunta_lower and "semana" in pergunta_lower:
+            if "dia_semana" in df.columns:
+                dados = df["dia_semana"].value_counts()
+                titulo = "Distribuição de acidentes por dia da semana"
+                resumo_texto = "\n".join([f"- {a}: {b}" for a, b in dados.items()])
+
+        elif "clima" in pergunta_lower or "condi" in pergunta_lower or "meteo" in pergunta_lower:
+            if "condicao_metereologica" in df.columns:
+                dados = df["condicao_metereologica"].value_counts().head(10)
+                titulo = "Condições meteorológicas mais registradas"
+                resumo_texto = "\n".join([f"- {a}: {b}" for a, b in dados.items()])
+
+        elif "tipo" in pergunta_lower:
+            if "tipo_acidente" in df.columns:
+                dados = df["tipo_acidente"].value_counts().head(10)
+                titulo = "Tipos de acidente mais comuns"
+                resumo_texto = "\n".join([f"- {a}: {b}" for a, b in dados.items()])
+
+
+        # 🔹 Fallback
+        if not resumo_texto:
+            resumo_texto = (
+                "Não encontrei dados diretamente relacionados à pergunta. "
+                "As colunas disponíveis são: "
+                + ", ".join(df.columns)
+            )
+
+        # 🔸 Monta prompt com resumo real
+        prompt = f"""
+Você é um analista de trânsito. Baseie-se exclusivamente nos dados abaixo.
+
+{titulo}
+{resumo_texto}
+
+Pergunta do usuário: {user_question}
+
+Explique o que esses dados mostram. Cite tendências, horários críticos ou fatores que podem explicar os padrões.
+"""
+
         response = ollama.chat(
             model="llama3.1",
-            messages=[{"role": "user", "content": prompt}]
+            messages=[
+                {"role": "system", "content": "Você é um analista de trânsito brasileiro."},
+                {"role": "user", "content": prompt}
+            ],
+            options={"temperature": 0.0}
         )
+
         st.success("Resposta da LLM:")
         st.write(response["message"]["content"])
+
     except Exception as e:
         st.error(f"Erro ao conectar com Ollama: {e}")
+
+
+

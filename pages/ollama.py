@@ -1,168 +1,116 @@
-import ollama
 import pandas as pd
-import json
+import ollama
 
-def carregar_dados():
+# --------------------------
+# 1️⃣ Carrega o CSV
+# --------------------------
+def carregar_dados(caminho='datatran_consolidado.csv'):
     try:
-        df = pd.read_json('/datatran_consolidado.json', encoding='latin1')
-        return df.head(100)  # Amostra pequena para exemplo
+        df = pd.read_csv(caminho, encoding='latin1', sep=None, engine='python')
+        print(f"✅ Dados carregados: {len(df)} registros")
+        return df
     except Exception as e:
-        print(f"Erro ao carregar dados: {e}")
+        print(f"❌ Erro ao carregar CSV: {e}")
         return pd.DataFrame()
 
-def analyze_with_llm(data_summary, question):
-    """
-    Analisa dados usando Llama 3.1 via Ollama
-    
-    Args:
-        data_summary (str): Resumo dos dados
-        question (str): Pergunta a ser respondida
-    
-    Returns:
-        str: Resposta da LLM
-    """
-    try:
+# --------------------------
+# 2️⃣ Função de análise real
+# --------------------------
+def responder_com_dados(df, pergunta):
+    pergunta = pergunta.lower()
+
+    # Tipos de acidente
+    if "tipo" in pergunta or "acidente" in pergunta:
+        if "tipo_acidente" not in df.columns:
+            return "❌ Coluna 'tipo_acidente' não encontrada no CSV."
+        contagem = df["tipo_acidente"].value_counts().head(10)
+        resumo = "\n".join([f"{i+1}. {a} — {b} ocorrências" for i, (a,b) in enumerate(contagem.items())])
         prompt = f"""
-        Você é um especialista em análise de dados de trânsito e segurança viária.
-        
-        Dados disponíveis:
-        {data_summary}
-        
-        Pergunta: {question}
-        
-        Por favor, forneça uma análise detalhada e insights baseados nos dados apresentados.
-        Seja específico e mencione padrões, tendências e recomendações práticas.
-        """
-        
-        response = ollama.chat(
-            model='llama3.1',
+Os dados abaixo mostram os tipos de acidente mais comuns no Brasil, conforme o CSV analisado:
+
+{resumo}
+
+Explique o que esses dados podem indicar sobre o comportamento no trânsito e as possíveis causas desses tipos de acidente.
+"""
+        return analisar_com_llama(prompt)
+
+    # Estados
+    elif "estado" in pergunta or "uf" in pergunta:
+        contagem = df["uf"].value_counts().head(10)
+        resumo = "\n".join([f"{i+1}. {a} — {b} ocorrências" for i, (a,b) in enumerate(contagem.items())])
+        prompt = f"""
+Os dados abaixo mostram os estados com mais acidentes:
+
+{resumo}
+
+Com base nesses dados, quais fatores podem contribuir para essa distribuição geográfica?
+"""
+        return analisar_com_llama(prompt)
+
+    # Municípios
+    elif "município" in pergunta or "municipio" in pergunta:
+        contagem = df["municipio"].value_counts().head(10)
+        resumo = "\n".join([f"{i+1}. {a} — {b} ocorrências" for i, (a,b) in enumerate(contagem.items())])
+        prompt = f"""
+Os dados abaixo mostram os municípios com mais acidentes:
+
+{resumo}
+
+Analise o que pode explicar a concentração de acidentes nesses locais.
+"""
+        return analisar_com_llama(prompt)
+
+    # Clima
+    elif "condição" in pergunta or "clima" in pergunta or "tempo" in pergunta:
+        contagem = df["condicao_metereologica"].value_counts().head(10)
+        resumo = "\n".join([f"{i+1}. {a} — {b} ocorrências" for i, (a,b) in enumerate(contagem.items())])
+        prompt = f"""
+Os dados abaixo mostram as condições meteorológicas mais registradas em acidentes:
+
+{resumo}
+
+Com base nesses dados, existe alguma relação entre o clima e a frequência de acidentes?
+"""
+        return analisar_com_llama(prompt)
+
+    else:
+        return "❌ Pergunta não reconhecida. Tente algo como:\n- 'Quais são os tipos de acidente mais comuns?'\n- 'Quais estados têm mais acidentes?'\n- 'Qual condição climática aparece mais?'"
+
+# --------------------------
+# 3️⃣ Chama o Llama apenas para interpretar o resumo
+# --------------------------
+def analisar_com_llama(prompt):
+    try:
+        resposta = ollama.chat(
+            model="llama3.1",
             messages=[
-                {
-                    'role': 'user',
-                    'content': prompt
-                }
-            ]
+                {"role": "system", "content": "Você é um analista de dados de trânsito no Brasil. Responda sempre com base apenas nos dados fornecidos."},
+                {"role": "user", "content": prompt}
+            ],
+            options={"temperature": 0.0}
         )
-        
-        return response['message']['content']
-        
+        return resposta["message"]["content"]
     except Exception as e:
-        return f"Erro ao conectar com Ollama: {e}"
+        return f"❌ Erro ao conectar com o modelo: {e}"
 
-def calcular_periodo(df):
-    """Calcula o período de tempo dos dados a partir da coluna 'data_inversa'."""
-    if 'data_inversa' not in df.columns:
-        return "Período não disponível"
-    try:
-        # Converte a coluna para datetime sem modificar o DataFrame original
-        datas = pd.to_datetime(df['data_inversa'], format='%d/%m/%Y', errors='coerce').dropna()
-        
-        if datas.empty:
-            return "Período não disponível"
-            
-        data_min = datas.min().strftime('%d/%m/%Y')
-        data_max = datas.max().strftime('%d/%m/%Y')
-        
-        return f"{data_min} a {data_max}"
-    except Exception:
-        return "Erro ao calcular período"
-
-def generate_data_summary(df):
-    """Gera um resumo dos dados para a LLM"""
-    if df.empty:
-        return "Nenhum dado disponível"
-    
-    summary = {
-        "total_registros": len(df),
-        "periodo": calcular_periodo(df),
-        "municipios_com_mais_acidentes": df['municipio'].value_counts().head(5).to_dict(),
-        "ufs_com_mais_acidentes": df['uf'].value_counts().head(5).to_dict(),
-        "tipos_acidente": df['tipo_acidente'].value_counts().to_dict(),
-        "condicoes_meteorologicas": df['condicao_metereologica'].value_counts().to_dict()
-    }
-    
-    return json.dumps(summary, indent=2, ensure_ascii=False)
-
-def main():
-    """Função principal do exemplo"""
-    print("🚗 Exemplo de Análise de Acidentes com Llama 3.1")
-    print("=" * 50)
-    
-    # Carregar dados
-    print("📊 Carregando dados...")
-    df = carregar_dados()
-    
-    if df.empty:
-        print("❌ Não foi possível carregar os dados.")
-        return
-    
-    # Gerar resumo dos dados
-    data_summary = generate_data_summary(df)
-    print(f"✅ Dados carregados: {len(df)} registros")
-    print("\n📋 Resumo dos dados:")
-    print(data_summary)
-    
-    # Perguntas de exemplo
-    questions = [
-        "Qual o tipo de acidente mais comum e em qual UF ele ocorre com maior frequência?",
-        "Existe uma relação entre a condição meteorológica e o tipo de acidente mais comum?",
-        "Quais são os 5 municípios com maior número de acidentes e quais são os tipos de acidentes predominantes neles?",
-        "Qual a média de acidentes por dia da semana e qual dia apresenta o maior pico?",
-        "Quais recomendações de segurança viária podem ser feitas com base nos dados de acidentes?"
-    ]
-    
-    print("\n🤖 Análises com Llama 3.1:")
-    print("=" * 50)
-    
-    for i, question in enumerate(questions, 1):
-        print(f"\n{i}. {question}")
-        print("-" * 60)
-        
-        response = analyze_with_llm(data_summary, question)
-        print(response)
-        print("\n" + "="*60)
-
-def interactive_mode():
-    """Modo interativo para perguntas personalizadas"""
-    print("\n🔄 Modo Interativo")
-    print("Digite suas perguntas (ou 'sair' para terminar):")
-    
-    df = carregar_dados()
-    if df.empty:
-        print("❌ Não foi possível carregar os dados.")
-        return
-    
-    data_summary = generate_data_summary(df)
-    
+# --------------------------
+# 4️⃣ Modo interativo
+# --------------------------
+def modo_interativo(df):
+    print("\n🚦 Faça perguntas sobre os dados (ex: 'Quais são os tipos de acidente mais comuns?')\nDigite 'sair' para encerrar.\n")
     while True:
-        question = input("\n❓ Sua pergunta: ").strip()
-        
-        if question.lower() in ['sair', 'exit', 'quit']:
-            print("👋 Até logo!")
+        pergunta = input("❓ Pergunta: ").strip()
+        if pergunta.lower() in ["sair", "exit", "quit"]:
             break
-        
-        if not question:
-            continue
-        
-        print("\n🤖 Analisando...")
-        response = analyze_with_llm(data_summary, question)
-        print(f"\n💡 Resposta:\n{response}")
+        resposta = responder_com_dados(df, pergunta)
+        print("\n💬 Resposta:\n")
+        print(resposta)
+        print("\n" + "="*80 + "\n")
 
+# --------------------------
+# 5️⃣ Execução principal
+# --------------------------
 if __name__ == "__main__":
-    try:
-        # Verificar se Ollama está disponível
-        ollama.list()
-        print("✅ Ollama conectado com sucesso!")
-        
-        # Executar análises automáticas
-        main()
-        
-        # Modo interativo
-        interactive_mode()
-        
-    except Exception as e:
-        print(f"❌ Erro ao conectar com Ollama: {e}")
-        print("\n📝 Instruções para configurar Ollama:")
-        print("1. Instalar: curl -fsSL https://ollama.ai/install.sh | sh")
-        print("2. Iniciar: ollama serve")
-        print("3. Baixar modelo: ollama pull llama3.1")
+    df = carregar_dados("/mnt/data/datatran_consolidado.csv")
+    if not df.empty:
+        modo_interativo(df)
