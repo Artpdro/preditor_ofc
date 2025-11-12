@@ -51,3 +51,13 @@ As funções `predict_risk` e `calculate_safe_route` em `pages/safe_route_interf
     *   Executar um algoritmo de caminho mais curto (Dijkstra/A*) para encontrar a rota de menor custo total (mais segura).
 
 **Observação:** A visualização da Polyline (a linha da rota) no Streamlit nativo (`st.map`) é limitada. Para desenhar a rota como uma linha, você pode precisar instalar e usar uma biblioteca de terceiros como `streamlit-folium`.
+
+### 5. Chatbot
+
+Faça perguntas ao chatbot como:
+
+1. `"Quais estados com mais acidentes?"`
+2. `Quais os tipos de acidente mais comuns?"`
+3. `"Qual hora do ocorre mais acidentes?"`
+4. `"Qual dia da semana ocorre mais acidentes?"`
+
