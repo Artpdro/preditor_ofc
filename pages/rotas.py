@@ -42,12 +42,12 @@ if "ufB" not in st.session_state:
     st.session_state["ufB"] = "PE"
 if "municipioB" not in st.session_state:
     st.session_state["municipioB"] = "Porto de Galinhas"
-if "rota_coords" not in st.session_state:
-    st.session_state["rota_coords"] = None
-if "distancia" not in st.session_state:
-    st.session_state["distancia"] = None
-if "duracao" not in st.session_state:
-    st.session_state["duracao"] = None
+if "rotas" not in st.session_state:
+    st.session_state["rotas"] = None
+# if "distancia" not in st.session_state:
+    # st.session_state["distancia"] = None
+# if "duracao" not in st.session_state:
+    # st.session_state["duracao"] = None
 
 # Função para calcular rota
 def calcular_rota():
@@ -61,11 +61,11 @@ def calcular_rota():
 
     if not coordsA:
         st.error(f"Não foi possível encontrar as coordenadas para '{cidadeA_busca}'.")
-        st.session_state["rota_coords"] = None
+        st.session_state["rotas"] = None
         return
     if not coordsB:
         st.error(f"Não foi possível encontrar as coordenadas para '{cidadeB_busca}'.")
-        st.session_state["rota_coords"] = None
+        st.session_state["rotas"] = None
         return
 
     latA, lonA = coordsA
@@ -76,28 +76,37 @@ def calcular_rota():
         f"https://routing.openstreetmap.de/routed-car/route/v1/driving/"
         f"{lonA},{latA};"  # OSRM espera (lon, lat)
         f"{lonB},{latB}"   # OSRM espera (lon, lat)
-        f"?overview=full&geometries=geojson"
+        f"?overview=full&geometries=geojson&alternatives=3"
     )
     
     try:
         res = requests.get(url, timeout=10).json()
-        if res.get("routes"):
-            route = res["routes"][0]
-            coords = route["geometry"]["coordinates"]
-            # Converte para (lat, lon) para Folium
-            st.session_state["rota_coords"] = [(lat, lon) for lon, lat in coords]
-            st.session_state["distancia"] = route["distance"] / 1000  # km
-            st.session_state["duracao"] = route["duration"] / 60      # min
+        if res.get("routes") and res["routes"]:
+            routes = res["routes"]
+            # Processa todas as rotas encontradas
+            st.session_state["rotas"] = []
+            for i, route in enumerate(routes):
+                coords = route["geometry"]["coordinates"]
+                # Converte para (lat, lon) para Folium
+                rota_coords = [(lat, lon) for lon, lat in coords]
+                distancia = route["distance"] / 1000  # km
+                duracao = route["duration"] / 60      # min
+                st.session_state["rotas"].append({
+                    "coords": rota_coords,
+                    "distancia": distancia,
+                    "duracao": duracao,
+                    "indice": i + 1
+                })
             st.session_state["latA"] = latA
             st.session_state["lonA"] = lonA
             st.session_state["latB"] = latB
             st.session_state["lonB"] = lonB
         else:
             st.error("Não foi possível calcular a rota entre as cidades fornecidas.")
-            st.session_state["rota_coords"] = None
+            st.session_state["rotas"] = None
     except requests.exceptions.RequestException as e:
         st.error(f"Erro ao calcular a rota: {e}")
-        st.session_state["rota_coords"] = None
+        st.session_state["rotas"] = None
 
 
 # Entrada de UF e Município
@@ -116,9 +125,8 @@ with col2:
 st.button("Calcular Rota", on_click=calcular_rota)
 
 # Exibir mapa se houver rota salva
-if st.session_state["rota_coords"]:
-    st.markdown(f"**Distância:** {st.session_state['distancia']:.2f} km | "
-                f"**Tempo estimado:** {st.session_state['duracao']:.1f} min")
+if st.session_state["rotas"]:
+    st.markdown(f"**{len(st.session_state['rotas'])}** rotas alternativas encontradas.")
 
     # Coordenadas geocodificadas são salvas em session_state["latA/lonA"] dentro de calcular_rota
     centro = [
@@ -134,5 +142,15 @@ if st.session_state["rota_coords"]:
         [st.session_state["latB"], st.session_state["lonB"]],
         popup=f"Destino: {st.session_state['municipioB']} - {st.session_state['ufB']}", icon=folium.Icon(color="red")
     ).add_to(m)
-    folium.PolyLine(st.session_state["rota_coords"], color="blue", weight=5).add_to(m)
+    cores = ["blue", "purple", "orange", "green"]
+    for i, rota in enumerate(st.session_state["rotas"]):
+        cor = cores[i % len(cores)]
+        folium.PolyLine(
+            rota["coords"],
+            color=cor,
+            weight=5,
+            opacity=0.7,
+            tooltip=f"Rota {rota['indice']}: {rota['distancia']:.2f} km, {rota['duracao']:.1f} min"
+        ).add_to(m)
+        st.markdown(f"**Rota {rota['indice']}** ({cor}): **Distância:** {rota['distancia']:.2f} km | **Tempo estimado:** {rota['duracao']:.1f} min")
     st_folium(m, width=700, height=500)
