@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 import plotly.express as px
 from core.auth import check_session_expiry, logout_user
-import ollama
+from core.chatbot import generate_and_execute_code_ollama, load_data as load_data_for_chatbot
 from pathlib import Path # Adicionado para manipulação de caminhos
 
 # --- Autenticação e Configuração Inicial ---
@@ -28,6 +28,11 @@ try:
     with open("datatran_consolidado.json", 'r', encoding='utf-8') as f:
         data = json.load(f)
     df = pd.DataFrame(data)
+
+    df_chatbot = load_data_for_chatbot()
+    if df_chatbot is None:
+        st.error("Erro ao carregar o DataFrame para o Chatbot.")
+        st.stop()
     
 except FileNotFoundError:
     st.error("Arquivos de modelo, mapeamento ou dados não encontrados. Certifique-se de que 'preditor.pkl', 'label_encoder_mappings.json' e 'datatran_consolidado.json' estão na pasta raiz.")
@@ -107,77 +112,19 @@ user_question = st.text_area(
 )
 if st.button("🤖 Perguntar à LLM"):
     try:
-        pergunta_lower = user_question.lower()
-        resumo_texto = ""
-        titulo = ""
-
-        # 🔍 Detecta o tema da pergunta
-        if "estado" in pergunta_lower or "uf" in pergunta_lower:
-            if "uf" in df.columns:
-                dados = df["uf"].value_counts().head(10)
-                titulo = "Estados com mais acidentes"
-                resumo_texto = "\n".join([f"- {a}: {b}" for a, b in dados.items()])
-
-        elif "hora" in pergunta_lower or "horário" in pergunta_lower or "turno" in pergunta_lower:
-            if "horario" in df.columns:
-                df["hora"] = pd.to_datetime(df["horario"], errors="coerce").dt.hour
-                dados = df["hora"].value_counts().sort_index()
-                titulo = "Distribuição de acidentes por hora do dia"
-                resumo_texto = "\n".join([f"- {int(a)}h: {b}" for a, b in dados.items()])
-
-        elif "dia" in pergunta_lower and "semana" in pergunta_lower:
-            if "dia_semana" in df.columns:
-                dados = df["dia_semana"].value_counts()
-                titulo = "Distribuição de acidentes por dia da semana"
-                resumo_texto = "\n".join([f"- {a}: {b}" for a, b in dados.items()])
-
-        elif "clima" in pergunta_lower or "condi" in pergunta_lower or "meteo" in pergunta_lower:
-            if "condicao_metereologica" in df.columns:
-                dados = df["condicao_metereologica"].value_counts().head(10)
-                titulo = "Condições meteorológicas mais registradas"
-                resumo_texto = "\n".join([f"- {a}: {b}" for a, b in dados.items()])
-
-        elif "tipo" in pergunta_lower:
-            if "tipo_acidente" in df.columns:
-                dados = df["tipo_acidente"].value_counts().head(10)
-                titulo = "Tipos de acidente mais comuns"
-                resumo_texto = "\n".join([f"- {a}: {b}" for a, b in dados.items()])
-
-
-        # 🔹 Fallback
-        if not resumo_texto:
-            resumo_texto = (
-                "Não encontrei dados diretamente relacionados à pergunta. "
-                "As colunas disponíveis são: "
-                + ", ".join(df.columns)
-            )
-
-        # 🔸 Monta prompt com resumo real
-        prompt = f"""
-Você é um analista de trânsito. Baseie-se exclusivamente nos dados abaixo.
-
-{titulo}
-{resumo_texto}
-
-Pergunta do usuário: {user_question}
-
-Explique o que esses dados mostram. Cite tendências, horários críticos ou fatores que podem explicar os padrões.
-"""
-
-        response = ollama.chat(
-            model="llama3.1",
-            messages=[
-                {"role": "system", "content": "Você é um analista de trânsito brasileiro."},
-                {"role": "user", "content": prompt}
-            ],
-            options={"temperature": 0.0}
-        )
-
-        st.success("Resposta da LLM:")
-        st.write(response["message"]["content"])
+        with st.spinner("Analisando dados e gerando resposta..."):
+            # A nova função usa o Ollama para gerar e executar código Pandas no DataFrame pré-processado
+            response = generate_and_execute_code_ollama(df_chatbot, user_question)
+        
+        if response.startswith("Erro ao gerar ou executar o código:"):
+            st.error(f"Erro na análise: {response}")
+        else:
+            st.success("Resposta da LLM:")
+            st.write(response)
 
     except Exception as e:
-        st.error(f"Erro ao conectar com Ollama: {e}")
+        st.error(f"Erro ao conectar com Ollama. Certifique-se de que o Ollama está rodando e o modelo 'llama3.1' está instalado. Detalhes: {e}")
+
 
 
 
