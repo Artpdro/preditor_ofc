@@ -1,18 +1,26 @@
 import pandas as pd
 import os
 import json
-import ollama
 import re
+from dotenv import load_dotenv
+load_dotenv()
 from pandas.core.series import Series
+from google import genai
+from google.genai import types
 
 # --- Configuração ---
-OLLAMA_MODEL = "llama3.1" # Modelo recomendado para o Ollama
+GEMINI_MODEL = "gemini-2.5-flash"
 JSON_FILE_PATH = "datatran_consolidado.json"
+
+try:
+    client = genai.Client()
+except Exception as e:
+    print(f"Erro ao inicializar o cliente Gemini: {e}")
+    client = None
 
 def load_data():
     """Carrega o arquivo JSON em um DataFrame do Pandas com pré-processamento."""
     # Garante que o caminho seja relativo ao diretório do projeto
-    # O arquivo está na raiz do projeto, mas o script está em core/
     full_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", JSON_FILE_PATH)
 
     if not os.path.exists(full_path):
@@ -25,19 +33,18 @@ def load_data():
             data = json.load(f)
         df = pd.DataFrame(data)
         
-        # Pré-processamento dos dados: minúsculas e sem acentos para facilitar a consulta do LLM
+        # Pré-processamento dos dados
         df['data_inversa'] = pd.to_datetime(df['data_inversa'], format='%d/%m/%Y', errors='coerce')
         df['latitude'] = df['latitude'].astype(str).str.replace(',', '.', regex=False).astype(float)
         df['longitude'] = df['longitude'].astype(str).str.replace(',', '.', regex=False).astype(float)
         
         # Novo pré-processamento para a coluna de horário
         if 'horario' in df.columns:
-            # Converte para datetime, extrai a hora e armazena em uma nova coluna 'hora'
             df['hora'] = pd.to_datetime(df['horario'], format='%H:%M:%S', errors='coerce').dt.hour
-            # Remove linhas onde a conversão falhou
             df.dropna(subset=['hora'], inplace=True)
             df['hora'] = df['hora'].astype(int)
         
+        # Pré-processamento de texto: minúsculas e sem acentos
         for col in ['dia_semana', 'uf', 'municipio', 'tipo_acidente', 'condicao_metereologica']:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.lower().str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8')
@@ -47,10 +54,13 @@ def load_data():
         print(f"Erro ao carregar ou processar o JSON: {e}")
         return None
 
-def generate_and_execute_code_ollama(df: pd.DataFrame, query: str):
-    """Usa o Ollama para gerar código Python e o executa para obter a resposta."""
+def generate_and_execute_code_gemini(df: pd.DataFrame, query: str):
+    """Usa o Gemini para gerar código Python e o executa para obter a resposta."""
     
-    # Define o prompt para o Ollama
+    if client is None:
+        return "Erro: Cliente Gemini não inicializado. Verifique se a variável de ambiente GEMINI_API_KEY está configurada."
+
+    # Define o prompt para o Gemini
     prompt = f"""
     Você é um assistente de análise de dados. Sua tarefa é gerar um código Python que usa a biblioteca 'pandas' para responder a uma pergunta sobre o DataFrame chamado 'df'.
     O DataFrame 'df' já está carregado e contém dados de acidentes de trânsito.
@@ -65,11 +75,11 @@ def generate_and_execute_code_ollama(df: pd.DataFrame, query: str):
     - Sexta-feira -> sexta-feira
     - Sábado -> sabado
     - Domingo -> domingo
+
+    Para facilitar o entendimento, traduza as UFs(estados) para nomes em extensos como: MG -> Minas Gerais
+
+    Para facilitar o entendimento, traduza os tipos acidentes para o normal da língua portuguesa como: Saida de leito carrocavel -> Saída de leito carroçável
     
-    Para o tipo de acidente 'Saida de leito carrocavel', use 'saida de leito carrocavel', utilize para todos os outros tipos.
-
-    Para as UF(estados) como 'PE', use o nome por extenso como 'Pernambuco', utilize para todos os outros tipos.
-
     O seu código DEVE aplicar o filtro usando os valores sem acentos e em minúsculas.
     
     As colunas relevantes são:
@@ -80,6 +90,7 @@ def generate_and_execute_code_ollama(df: pd.DataFrame, query: str):
     - 'tipo_acidente' (string, minúsculas, sem acentos)
     - 'condicao_metereologica' (string, minúsculas, sem acentos)
     - 'hora' (integer, 0-23) - **NOVA COLUNA** com a hora do acidente.
+    
     
     A pergunta é: "{query}"
     
@@ -96,27 +107,31 @@ def generate_and_execute_code_ollama(df: pd.DataFrame, query: str):
     Gere o código para a pergunta: "{query}"
     """
     
-    # Chamada ao Ollama
+    # Chamada ao Gemini
     try:
-        response = ollama.chat(
-            model=OLLAMA_MODEL,
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": "Gere o código Python para a pergunta."}
-            ],
-            options={"temperature": 0.0}
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=[prompt],
+            config=types.GenerateContentConfig(
+                temperature=0.0,
+            )
         )
         
         # Extrai o código gerado
-        generated_text = response["message"]["content"]
+        generated_text = response.text
         
         # Usa regex para extrair o bloco de código
         match = re.search(r"```python\n(.*?)```", generated_text, re.DOTALL)
         if match:
             generated_code = match.group(1).strip()
         else:
-            # Se não encontrar o bloco, assume que o texto gerado é o código
-            generated_code = generated_text.strip()
+            # Se não encontrar o bloco, tenta extrair o código de forma mais agressiva
+            match_aggressive = re.search(r"```(.*?)```", generated_text, re.DOTALL)
+            if match_aggressive:
+                generated_code = match_aggressive.group(1).strip()
+            else:
+                # Se ainda assim não encontrar, assume que o texto gerado é o código
+                generated_code = generated_text.strip()
         
         # Executa o código gerado
         local_vars = {'df': df, 'final_result': None, 'pd': pd, 'Series': Series}
@@ -133,7 +148,7 @@ def generate_and_execute_code_ollama(df: pd.DataFrame, query: str):
         # Se o erro for de sequência vazia, é porque o filtro não encontrou nada
         if "attempt to get argmax of an empty sequence" in str(e):
             return "Não foram encontrados acidentes do tipo solicitado para realizar a análise."
-        return f"Erro ao gerar ou executar o código: {e}. Certifique-se de que o Ollama está rodando e o modelo '{OLLAMA_MODEL}' está instalado."
+        return f"Erro ao conectar com Gemini: {e}. Verifique se a variável de ambiente GEMINI_API_KEY está configurada corretamente."
 
 if __name__ == "__main__":
     # Teste de funcionalidade
@@ -142,7 +157,7 @@ if __name__ == "__main__":
         example_query = "Qual dia da semana tem mais acidentes de colisao traseira?"
         print(f"\n--- Teste com a pergunta: '{example_query}' ---")
         
-        # Nota: Este teste falhará no ambiente sandbox, pois o Ollama não está rodando aqui.
+        # Nota: Este teste falhará no ambiente sandbox, pois a chave de API não está configurada aqui.
         # Ele serve apenas para validar a estrutura do código.
-        response = generate_and_execute_code_ollama(df, example_query)
+        response = generate_and_execute_code_gemini(df, example_query)
         print(f"Resposta da IA: {response}")
