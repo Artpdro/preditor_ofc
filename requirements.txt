@@ -13,5 +13,5 @@ joblib
 plotly
 folium
 streamlit-folium
-ollama
 starlette
+google-genai
