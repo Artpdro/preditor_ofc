@@ -105,7 +105,7 @@ if st.button("Acessar Calculadora de Rota Segura"):
     
 st.markdown("---")
 st.header("🧠 Pergunte ao chat")
-st.info("Para usar integração com Ollama, instale e inicie o serviço, etc.")
+st.info("O chatbot usa o Google Gemini para gerar e executar código Python no DataFrame de acidentes. Configure a variável de ambiente GEMINI_API_KEY.")
 user_question = st.text_area(
     "Faça uma pergunta sobre os dados de acidentes:",
     "Quais são os principais fatores de risco para acidentes de trânsito?"
@@ -113,8 +113,8 @@ user_question = st.text_area(
 if st.button("🤖 Perguntar à LLM"):
     try:
         with st.spinner("Analisando dados e gerando resposta..."):
-            # A nova função usa o Ollama para gerar e executar código Pandas no DataFrame pré-processado
-            response = generate_and_execute_code_ollama(df_chatbot, user_question)
+            # A nova função usa o Gemini para gerar e executar código Pandas no DataFrame pré-processado
+            response = generate_and_execute_code_gemini(df_chatbot, user_question)
         
         if response.startswith("Erro ao gerar ou executar o código:"):
             st.error(f"Erro na análise: {response}")
@@ -123,8 +123,4 @@ if st.button("🤖 Perguntar à LLM"):
             st.write(response)
 
     except Exception as e:
-        st.error(f"Erro ao conectar com Ollama. Certifique-se de que o Ollama está rodando e o modelo 'llama3.1' está instalado. Detalhes: {e}")
-
-
-
-
+        st.error(f"Erro ao conectar com Gemini. Certifique-se de que a variável de ambiente GEMINI_API_KEY está configurada. Detalhes: {e}")
