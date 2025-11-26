@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 import plotly.express as px
 from core.auth import check_session_expiry, logout_user
-from core.chatbot import generate_and_execute_code_ollama, load_data as load_data_for_chatbot
+from core.chatbot import generate_and_execute_code_gemini, load_data as load_data_for_chatbot
 from pathlib import Path # Adicionado para manipulação de caminhos
 
 # --- Autenticação e Configuração Inicial ---
@@ -124,3 +124,4 @@ if st.button("🤖 Perguntar à LLM"):
 
     except Exception as e:
         st.error(f"Erro ao conectar com Gemini. Certifique-se de que a variável de ambiente GEMINI_API_KEY está configurada. Detalhes: {e}")
+
