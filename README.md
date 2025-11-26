@@ -58,6 +58,7 @@ Faça perguntas ao chatbot como:
 
 1. `"Quais estados com mais acidentes?"`
 2. `Quais os tipos de acidente mais comuns?"`
-3. `"Qual hora do ocorre mais acidentes?"`
+3. `"Qual hora do dia ocorre mais acidentes?"`
 4. `"Qual dia da semana ocorre mais acidentes?"`
+
 
