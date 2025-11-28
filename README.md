@@ -25,6 +25,14 @@ pip install -r requirements.txt
 pip install streamlit pandas
 ```
 
+Crie um .env e adicione:
+```bash
+GEMINI_API_KEY="..."
+MONGO_URI="..."
+DB_NAME="..."
+COLLECTION_NAME="..."
+```
+
 ### 2. Execução
 
 Execute o aplicativo Streamlit a partir do diretório raiz do projeto:
@@ -60,5 +68,6 @@ Faça perguntas ao chatbot como:
 2. `Quais os tipos de acidente mais comuns?"`
 3. `"Qual hora do dia ocorre mais acidentes?"`
 4. `"Qual dia da semana ocorre mais acidentes?"`
+
 
 
