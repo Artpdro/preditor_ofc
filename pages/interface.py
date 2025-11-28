@@ -105,7 +105,6 @@ if st.button("Acessar Calculadora de Rota Segura"):
     
 st.markdown("---")
 st.header("🧠 Pergunte ao chat")
-st.info("O chatbot usa o Google Gemini para gerar e executar código Python no DataFrame de acidentes. Configure a variável de ambiente GEMINI_API_KEY.")
 user_question = st.text_area(
     "Faça uma pergunta sobre os dados de acidentes:",
     "Quais são os principais fatores de risco para acidentes de trânsito?"
@@ -124,4 +123,5 @@ if st.button("🤖 Perguntar à LLM"):
 
     except Exception as e:
         st.error(f"Erro ao conectar com Gemini. Certifique-se de que a variável de ambiente GEMINI_API_KEY está configurada. Detalhes: {e}")
+
 
