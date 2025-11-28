@@ -1,37 +1,48 @@
 import pandas as pd
 import os
-import json
 import re
-from dotenv import load_dotenv
-load_dotenv()
 from pandas.core.series import Series
 from google import genai
 from google.genai import types
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # --- Configuração ---
 GEMINI_MODEL = "gemini-2.5-flash"
-JSON_FILE_PATH = "datatran_consolidado.json"
+MONGO_URI = os.getenv("MONGO_URI")
+DB_NAME = os.getenv("DB_NAME")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME")
 
+# Inicializa o cliente Gemini. Ele buscará a chave GEMINI_API_KEY automaticamente.
 try:
     client = genai.Client()
 except Exception as e:
     print(f"Erro ao inicializar o cliente Gemini: {e}")
     client = None
 
-def load_data():
-    """Carrega o arquivo JSON em um DataFrame do Pandas com pré-processamento."""
-    # Garante que o caminho seja relativo ao diretório do projeto
-    full_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", JSON_FILE_PATH)
+from pymongo import MongoClient
 
-    if not os.path.exists(full_path):
-        print(f"Erro: Arquivo de dados não encontrado em {full_path}")
+def load_data():
+    """Carrega os dados do MongoDB em um DataFrame do Pandas com pré-processamento."""
+    
+    if not all([MONGO_URI, DB_NAME, COLLECTION_NAME]):
+        print("Erro: Variáveis de ambiente do MongoDB (MONGO_URI, DB_NAME, COLLECTION_NAME) não configuradas.")
         return None
 
     try:
-        # Carrega o JSON
-        with open(full_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        # Conecta ao MongoDB
+        client = MongoClient(MONGO_URI)
+        db = client[DB_NAME]
+        collection = db[COLLECTION_NAME]
+        
+        # Carrega todos os documentos da coleção para um DataFrame
+        data = list(collection.find({}))
         df = pd.DataFrame(data)
+        
+        # Remove a coluna _id do MongoDB, se existir
+        if '_id' in df.columns:
+            df = df.drop(columns=['_id'])
         
         # Pré-processamento dos dados
         df['data_inversa'] = pd.to_datetime(df['data_inversa'], format='%d/%m/%Y', errors='coerce')
@@ -51,7 +62,7 @@ def load_data():
         
         return df
     except Exception as e:
-        print(f"Erro ao carregar ou processar o JSON: {e}")
+        print(f"Erro ao carregar ou processar os dados do MongoDB: {e}")
         return None
 
 def generate_and_execute_code_gemini(df: pd.DataFrame, query: str):
@@ -75,11 +86,11 @@ def generate_and_execute_code_gemini(df: pd.DataFrame, query: str):
     - Sexta-feira -> sexta-feira
     - Sábado -> sabado
     - Domingo -> domingo
-
+    
     Para facilitar o entendimento, traduza as UFs(estados) para nomes em extensos como: MG -> Minas Gerais
 
     Para facilitar o entendimento, traduza os tipos acidentes para o normal da língua portuguesa como: Saida de leito carrocavel -> Saída de leito carroçável
-    
+
     O seu código DEVE aplicar o filtro usando os valores sem acentos e em minúsculas.
     
     As colunas relevantes são:
@@ -90,7 +101,6 @@ def generate_and_execute_code_gemini(df: pd.DataFrame, query: str):
     - 'tipo_acidente' (string, minúsculas, sem acentos)
     - 'condicao_metereologica' (string, minúsculas, sem acentos)
     - 'hora' (integer, 0-23) - **NOVA COLUNA** com a hora do acidente.
-    
     
     A pergunta é: "{query}"
     
