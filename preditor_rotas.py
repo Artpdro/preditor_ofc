@@ -2,6 +2,13 @@
 import pandas as pd
 import numpy as np
 import json
+from pymongo import MongoClient
+from dotenv import load_dotenv
+import os
+from pathlib import Path
+# Carrega variáveis de ambiente do arquivo .env
+# Força o carregamento do .env a partir do diretório do script
+load_dotenv(dotenv_path=Path(__file__).parent / '.env')
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
@@ -10,20 +17,50 @@ from sklearn.pipeline import Pipeline
 from sklearn.metrics import classification_report
 import joblib
 
-# Nome do arquivo de dados e do arquivo de modelo
-ARQUIVO_DADOS = 'datatran_consolidado.json'
+# Nome do arquivo de modelo
+ARQUIVO_MODELO = 'modelo_risco_rodoviario.pkl'
 ARQUIVO_MODELO = 'modelo_risco_rodoviario.pkl'
 
-def preparar_dados(caminho_arquivo):
-    """Carrega, limpa e prepara os dados do DATATRAN para o treinamento do ML."""
-    print(f"1. Carregando dados de {caminho_arquivo}...")
+def preparar_dados():
+    """Carrega, limpa e prepara os dados do DATATRAN para o treinamento do ML, buscando do MongoDB Atlas."""
+    
+# As variáveis já foram carregadas no escopo global.
+# Apenas obtém as variáveis de ambiente.
+    MONGO_URI = os.getenv("MONGO_URI")
+    DB_NAME = os.getenv("DB_NAME")
+    COLLECTION_NAME = os.getenv("COLLECTION_NAME")
+    
+    if not all([MONGO_URI, DB_NAME, COLLECTION_NAME]):
+        print("ERRO: Variáveis de ambiente MONGO_URI, DB_NAME ou COLLECTION_NAME não estão configuradas no arquivo .env.")
+        return pd.DataFrame()
+        
+    print(f"1. Conectando ao MongoDB Atlas e carregando dados da coleção '{COLLECTION_NAME}'...")
     
     try:
-        with open(caminho_arquivo, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        # Conexão com o MongoDB
+        client = MongoClient(MONGO_URI)
+        db = client[DB_NAME]
+        collection = db[COLLECTION_NAME]
+        
+        # Busca todos os documentos da coleção e converte para DataFrame
+        cursor = collection.find({})
+        data = list(cursor)
+        
+        # Fecha a conexão
+        client.close()
+        
+        if not data:
+            print("AVISO: Nenhuma dado encontrado na coleção. Retornando DataFrame vazio.")
+            return pd.DataFrame()
+            
         df = pd.DataFrame(data)
-    except FileNotFoundError:
-        print(f"ERRO: Arquivo {caminho_arquivo} não encontrado. Por favor, verifique o nome ou caminho.")
+        
+        # O campo '_id' do MongoDB não é necessário para o ML
+        if '_id' in df.columns:
+            df.drop('_id', axis=1, inplace=True)
+            
+    except Exception as e:
+        print(f"ERRO ao conectar ou carregar dados do MongoDB: {e}")
         return pd.DataFrame() # Retorna DataFrame vazio em caso de erro
 
     # 1. Limpeza e Conversão de Tipos
@@ -120,6 +157,6 @@ def treinar_e_salvar_modelo(df_ml):
     return modelo_risco
 
 if __name__ == '__main__':
-    df_dados = preparar_dados(ARQUIVO_DADOS)
+    df_dados = preparar_dados()
     if not df_dados.empty:
         treinar_e_salvar_modelo(df_dados)
